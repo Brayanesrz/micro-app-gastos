@@ -8,7 +8,6 @@ export default function App() {
 
   const fechaActual = obtenerFechaHoy();
 
-  // Función para sumar 1 mes a una fecha YYYY-MM-DD
   const sumarUnMes = (fechaStr) => {
     if (!fechaStr) return fechaActual;
     const [year, month, day] = fechaStr.split('-').map(Number);
@@ -71,7 +70,6 @@ export default function App() {
   const [mostrarHistorialIngresos, setMostrarHistorialIngresos] = useState(false);
   const [mostrarNoCumplidos, setMostrarNoCumplidos] = useState(false);
 
-  // EFECTO: Procesar vencimientos y ciclos mensuales automáticos
   useEffect(() => {
     let huboCambios = false;
     let nuevosFijos = [...gastosFijos];
@@ -83,13 +81,11 @@ export default function App() {
       if (!gasto.fechaVencimiento) return;
       const vencimiento = new Date(gasto.fechaVencimiento);
 
-      // Si hoy es el día de pago o ya pasó
       if (hoy >= vencimiento) {
         huboCambios = true;
         const cumplido = gasto.abonado >= gasto.montoTotal;
 
         if (!cumplido) {
-          // Guardar en la sección de No Cumplidos
           nuevosNoCumplidos.unshift({
             ...gasto,
             idNoCumplido: Date.now() + Math.random(),
@@ -98,7 +94,6 @@ export default function App() {
           });
         }
 
-        // Remover el gasto vencido y agregar el renovado para el siguiente mes
         nuevosFijos = nuevosFijos.filter(g => g.id !== gasto.id);
         nuevosFijos.push({
           id: Date.now() + Math.random(),
@@ -237,6 +232,7 @@ export default function App() {
     };
     const filtrados = historialIngresos.filter(item => item.fecha !== fechaActual);
     setHistorialIngresos([registroIngreso, ...filtrados]);
+    setIngresoHoy(''); // Reset del campo tras guardar el corte
     alert('¡Corte de ingresos de hoy guardado en el historial con éxito!');
   };
 
@@ -423,7 +419,7 @@ export default function App() {
         })}
       </div>
 
-      {/* SECCIÓN NUEVA: Objetivos No Cumplidos */}
+      {/* Objetivos No Cumplidos */}
       <div style={{ ...S.card, borderColor: gastosNoCumplidos.length > 0 ? '#ef4444' : '#374151' }}>
         <button 
           onClick={() => setMostrarNoCumplidos(!mostrarNoCumplidos)}
@@ -466,119 +462,4 @@ export default function App() {
             onChange={e => setNuevoGasto({...nuevoGasto, nombre: e.target.value})}
             style={S.input}
           />
-          <div style={S.flexRow}>
-            <input 
-              type="number" 
-              placeholder="Monto Total $" 
-              value={nuevoGasto.montoTotal}
-              onChange={e => setNuevoGasto({...nuevoGasto, montoTotal: e.target.value})}
-              style={S.input}
-            />
-            <input 
-              type="date" 
-              value={nuevoGasto.fechaVencimiento}
-              onChange={e => setNuevoGasto({...nuevoGasto, fechaVencimiento: e.target.value})}
-              style={S.input}
-            />
-          </div>
-          <button type="submit" style={S.btnBlue}>+ Guardar Gasto</button>
-        </form>
-      </div>
-
-      {/* HISTORIAL: Ingresos y Cierres Diarios */}
-      <div style={S.card}>
-        <button 
-          onClick={() => setMostrarHistorialIngresos(!mostrarHistorialIngresos)}
-          style={{ width: '100%', background: 'none', border: 'none', color: '#6ee7b7', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', ...S.flexBetween }}
-        >
-          <span>📊 Historial de Ingresos / Cierres ({historialIngresos.length})</span>
-          <span>{mostrarHistorialIngresos ? '▲' : '▼'}</span>
-        </button>
-
-        {mostrarHistorialIngresos && (
-          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #374151', maxHeight: '180px', overflowY: 'auto' }}>
-            {historialIngresos.length === 0 ? (
-              <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>No hay cortes de ingresos guardados.</p>
-            ) : (
-              historialIngresos.map(item => (
-                <div key={item.id} style={{ ...S.flexBetween, padding: '8px 0', borderBottom: '1px solid #374151', fontSize: '12px' }}>
-                  <div>
-                    <div><strong>Fecha: {item.fecha}</strong></div>
-                    <div style={{ color: '#9ca3af', fontSize: '11px' }}>Bruto: ${item.ingresoBruto} \vert{} Op: -${item.operativos}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: '#34d399', fontWeight: 'bold' }}>Disp: ${item.disponible}</span>
-                    <button onClick={() => eliminarHistorialIngreso(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>🗑️</button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* HISTORIAL: Gastos Operativos Generales */}
-      <div style={S.card}>
-        <button 
-          onClick={() => setMostrarHistorialOps(!mostrarHistorialOps)}
-          style={{ width: '100%', background: 'none', border: 'none', color: '#fb923c', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', ...S.flexBetween }}
-        >
-          <span>⛽ Historial de Gastos Operativos ({historialOperativos.length})</span>
-          <span>{mostrarHistorialOps ? '▲' : '▼'}</span>
-        </button>
-
-        {mostrarHistorialOps && (
-          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #374151', maxHeight: '180px', overflowY: 'auto' }}>
-            {historialOperativos.length === 0 ? (
-              <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>No hay registros operativos anteriores.</p>
-            ) : (
-              historialOperativos.map(op => (
-                <div key={op.id} style={{ ...S.flexBetween, padding: '6px 0', borderBottom: '1px solid #374151', fontSize: '12px' }}>
-                  <div>
-                    <div><strong>{op.concepto}</strong> <span style={{ color: '#9ca3af', fontSize: '10px' }}>({op.fecha} {op.fechaHora})</span></div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: '#fb923c', fontWeight: 'bold' }}>-${op.monto}</span>
-                    <button onClick={() => eliminarHistorialOp(op.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>🗑️</button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* HISTORIAL: Abonos a Fijos */}
-      <div style={S.card}>
-        <button 
-          onClick={() => setMostrarHistorialAbonos(!mostrarHistorialAbonos)}
-          style={{ width: '100%', background: 'none', border: 'none', color: '#4ade80', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', ...S.flexBetween }}
-        >
-          <span>💵 Historial de Abonos a Deudas ({historialAbonos.length})</span>
-          <span>{mostrarHistorialAbonos ? '▲' : '▼'}</span>
-        </button>
-
-        {mostrarHistorialAbonos && (
-          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #374151', maxHeight: '180px', overflowY: 'auto' }}>
-            {historialAbonos.length === 0 ? (
-              <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>No hay abonos registrados aún.</p>
-            ) : (
-              historialAbonos.map(abono => (
-                <div key={abono.id} style={{ ...S.flexBetween, padding: '6px 0', borderBottom: '1px solid #374151', fontSize: '12px' }}>
-                  <div>
-                    <div><strong>{abono.gastoNombre}</strong></div>
-                    <div style={{ fontSize: '10px', color: '#9ca3af' }}>{abono.fecha}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: '#4ade80', fontWeight: 'bold' }}>+${abono.monto}</span>
-                    <button onClick={() => eliminarAbono(abono.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>🗑️</button>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+          <div style={S.flexRow
