@@ -106,13 +106,13 @@ export default function App() {
   };
 
   const eliminarGastoFijo = (id) => setGastosFijos(gastosFijos.filter(g => g.id !== id));
+  const eliminarGastoOp = (id) => setGastosOperativos(gastosOperativos.filter(op => op.id !== id));
   const eliminarAbono = (id) => setHistorialAbonos(historialAbonos.filter(a => a.id !== id));
 
-  // Estilos Base Inline
   const S = {
     app: { backgroundColor: '#111827', color: '#ffffff', minHeight: '100vh', padding: '16px', fontFamily: 'sans-serif', maxWidth: '420px', margin: '0 auto' },
     card: { backgroundColor: '#1f2937', padding: '16px', borderRadius: '12px', marginBottom: '16px', border: '1px solid #374151' },
-    header: { background: 'linear-[#2563eb]', backgroundColor: '#2563eb', padding: '20px', borderRadius: '16px', textAlign: 'center', marginBottom: '20px' },
+    header: { backgroundColor: '#2563eb', padding: '20px', borderRadius: '16px', textAlign: 'center', marginBottom: '20px' },
     input: { backgroundColor: '#374151', color: '#ffffff', border: '1px solid #4b5563', padding: '10px', borderRadius: '8px', fontSize: '14px', width: '100%', boxSizing: 'border-box' },
     btnGreen: { backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
     btnBlue: { backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', width: '100%', cursor: 'pointer' },
@@ -159,7 +159,7 @@ export default function App() {
         </form>
       </div>
 
-      {/* Gastos Operativos */}
+      {/* Gastos Operativos con botón de borrar */}
       <div style={S.card}>
         <div style={S.flexBetween}>
           <h3 style={{ fontSize: '14px', margin: 0, color: '#fb923c' }}>⛽ Operativos de Hoy</h3>
@@ -188,12 +188,19 @@ export default function App() {
           <button type="submit" style={{ ...S.btnOrange, width: '30%' }}>+ Registro</button>
         </form>
         <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
-          {gastosOperativos.map(op => (
-            <div key={op.id} style={{ ...S.flexBetween, padding: '6px 8px', backgroundColor: '#374151', borderRadius: '4px', marginBottom: '4px', fontSize: '12px' }}>
-              <span>{op.concepto} <span style={{ color: '#9ca3af' }}>({op.fecha})</span></span>
-              <span style={{ color: '#fb923c', fontWeight: 'bold' }}>-${op.monto.toFixed(2)}</span>
-            </div>
-          ))}
+          {gastosOperativos.length === 0 ? (
+            <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center', margin: '8px 0' }}>No hay gastos operativos hoy.</p>
+          ) : (
+            gastosOperativos.map(op => (
+              <div key={op.id} style={{ ...S.flexBetween, padding: '6px 8px', backgroundColor: '#374151', borderRadius: '4px', marginBottom: '4px', fontSize: '12px' }}>
+                <span>{op.concepto} <span style={{ color: '#9ca3af' }}>({op.fecha})</span></span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: '#fb923c', fontWeight: 'bold' }}>-${op.monto.toFixed(2)}</span>
+                  <button onClick={() => eliminarGastoOp(op.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px' }}>🗑️</button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
