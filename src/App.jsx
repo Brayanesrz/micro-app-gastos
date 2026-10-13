@@ -19,6 +19,11 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  const [ingresoHoy, setIngresoHoy] = useState(() => {
+    const saved = localStorage.getItem('ingresoHoy');
+    return saved ? Number(saved) : '';
+  });
+
   const [nuevoGasto, setNuevoGasto] = useState({ nombre: '', montoTotal: '', fechaVencimiento: '' });
   const [nuevoAbono, setNuevoAbono] = useState({ gastoId: '', monto: '' });
   const [nuevoOp, setNuevoOp] = useState({ concepto: 'Gasolina', monto: '' });
@@ -35,6 +40,10 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('historialAbonos', JSON.stringify(historialAbonos));
   }, [historialAbonos]);
+
+  useEffect(() => {
+    localStorage.setItem('ingresoHoy', ingresoHoy.toString());
+  }, [ingresoHoy]);
 
   const calcularDiasRestantes = (fechaVenc) => {
     if (!fechaVenc) return 1;
@@ -60,6 +69,12 @@ export default function App() {
   }, 0);
 
   const totalGastosOpHoy = gastosOperativos.reduce((acc, g) => acc + Number(g.monto), 0);
+  
+  // Total abonado el día de hoy
+  const abonosHoy = historialAbonos.reduce((acc, a) => acc + Number(a.monto), 0);
+
+  // Disponible Real = Ingresos - Operativos - Abonos hechos hoy
+  const disponibleParaAbonar = Math.max(0, (Number(ingresoHoy) || 0) - totalGastosOpHoy - abonosHoy);
 
   const agregarGastoFijo = (e) => {
     e.preventDefault();
@@ -79,6 +94,11 @@ export default function App() {
     if (!nuevoAbono.gastoId || !nuevoAbono.monto) return;
     const monto = Number(nuevoAbono.monto);
     const id = Number(nuevoAbono.gastoId);
+
+    if (monto > disponibleParaAbonar) {
+      alert(`No puedes abonar $${monto}. Tu disponible real de hoy es solo $${disponibleParaAbonar.toFixed(2)}`);
+      return;
+    }
 
     setGastosFijos(gastosFijos.map(g => g.id === id ? { ...g, abonado: g.abonado + monto } : g));
 
@@ -106,13 +126,19 @@ export default function App() {
   };
 
   const eliminarGastoFijo = (id) => setGastosFijos(gastosFijos.filter(g => g.id !== id));
-  const eliminarGastoOp = (id) => setGastosOperativos(gastosOperativos.filter(op => op.id !== id));
+  
+  const eliminarGastoOp = (id) => {
+    const listaActualizada = gastosOperativos.filter(op => op.id !== id);
+    setGastosOperativos(listaActualizada);
+    localStorage.setItem('gastosOperativos', JSON.stringify(listaActualizada));
+  };
+
   const eliminarAbono = (id) => setHistorialAbonos(historialAbonos.filter(a => a.id !== id));
 
   const S = {
     app: { backgroundColor: '#111827', color: '#ffffff', minHeight: '100vh', padding: '16px', fontFamily: 'sans-serif', maxWidth: '420px', margin: '0 auto' },
     card: { backgroundColor: '#1f2937', padding: '16px', borderRadius: '12px', marginBottom: '16px', border: '1px solid #374151' },
-    header: { backgroundColor: '#2563eb', padding: '20px', borderRadius: '16px', textAlign: 'center', marginBottom: '20px' },
+    header: { backgroundColor: '#2563eb', padding: '18px', borderRadius: '16px', textAlign: 'center', marginBottom: '16px' },
     input: { backgroundColor: '#374151', color: '#ffffff', border: '1px solid #4b5563', padding: '10px', borderRadius: '8px', fontSize: '14px', width: '100%', boxSizing: 'border-box' },
     btnGreen: { backgroundColor: '#16a34a', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' },
     btnBlue: { backgroundColor: '#2563eb', color: '#fff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: 'bold', width: '100%', cursor: 'pointer' },
@@ -126,8 +152,33 @@ export default function App() {
       {/* Target Meta Diaria */}
       <div style={S.header}>
         <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.8 }}>Meta Diaria Fija Requerida</span>
-        <h1 style={{ fontSize: '36px', margin: '8px 0 0 0', fontWeight: 'bold' }}>${metaDiariaTotal.toFixed(2)}</h1>
-        <p style={{ fontSize: '12px', opacity: '0.9', marginTop: '4px' }}>Calculada según las fechas de vencimiento más próximas</p>
+        <h1 style={{ fontSize: '34px', margin: '6px 0 0 0', fontWeight: 'bold' }}>${metaDiariaTotal.toFixed(2)}</h1>
+        <p style={{ fontSize: '11px', opacity: '0.9', marginTop: '4px' }}>Calculada según las fechas de vencimiento más próximas</p>
+      </div>
+
+      {/* Control de Flujo de Hoy: Ingresos vs Operativos */}
+      <div style={{ ...S.card, borderColor: '#10b981', backgroundColor: '#064e3b' }}>
+        <h3 style={{ fontSize: '14px', marginTop: 0, marginBottom: '8px', color: '#6ee7b7' }}>💰 Flujo de Efectivo de Hoy</h3>
+        <div style={{ marginBottom: '10px' }}>
+          <label style={{ fontSize: '11px', color: '#a7f3d0', display: 'block', marginBottom: '4px' }}>Ingreso Bruto Generado hoy ($):</label>
+          <input 
+            type="number" 
+            placeholder="Ej: 1000" 
+            value={ingresoHoy}
+            onChange={e => setIngresoHoy(e.target.value)}
+            style={{ ...S.input, backgroundColor: '#047857', borderColor: '#059669', color: '#fff', fontWeight: 'bold', fontSize: '16px' }}
+          />
+        </div>
+
+        <div style={{ ...S.flexBetween, padding: '8px', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: '8px', fontSize: '12px' }}>
+          <span>(-) Gastos Operativos hoy:</span>
+          <strong style={{ color: '#fb923c' }}>-${totalGastosOpHoy.toFixed(2)}</strong>
+        </div>
+
+        <div style={{ ...S.flexBetween, padding: '10px 8px', backgroundColor: '#065f46', borderRadius: '8px', marginTop: '8px', fontSize: '14px' }}>
+          <span style={{ fontWeight: 'bold', color: '#ecfdf5' }}>Disponible Real para Abonar:</span>
+          <strong style={{ color: '#34d399', fontSize: '18px' }}>${disponibleParaAbonar.toFixed(2)}</strong>
+        </div>
       </div>
 
       {/* Registrar Abono */}
@@ -149,7 +200,7 @@ export default function App() {
           <div style={S.flexRow}>
             <input 
               type="number" 
-              placeholder="Monto $" 
+              placeholder={`Máx: $${disponibleParaAbonar.toFixed(0)}`} 
               value={nuevoAbono.monto}
               onChange={e => setNuevoAbono({...nuevoAbono, monto: e.target.value})}
               style={S.input}
@@ -159,7 +210,7 @@ export default function App() {
         </form>
       </div>
 
-      {/* Gastos Operativos con botón de borrar */}
+      {/* Gastos Operativos */}
       <div style={S.card}>
         <div style={S.flexBetween}>
           <h3 style={{ fontSize: '14px', margin: 0, color: '#fb923c' }}>⛽ Operativos de Hoy</h3>
