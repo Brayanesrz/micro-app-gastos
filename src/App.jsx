@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 
 export default function App() {
+  const obtenerFechaHoy = () => {
+    const hoy = new Date();
+    return hoy.toISOString().split('T')[0];
+  };
+
+  const fechaActual = obtenerFechaHoy();
+
   const [gastosFijos, setGastosFijos] = useState(() => {
     const saved = localStorage.getItem('gastosFijos');
     return saved ? JSON.parse(saved) : [
@@ -10,7 +17,17 @@ export default function App() {
   });
 
   const [gastosOperativos, setGastosOperativos] = useState(() => {
-    const saved = localStorage.getItem('gastosOperativos');
+    const savedFecha = localStorage.getItem('fechaOperativos');
+    const savedOps = localStorage.getItem('gastosOperativos');
+    if (savedFecha === fechaActual && savedOps) {
+      return JSON.parse(savedOps);
+    }
+    return [];
+  });
+
+  // Historial general de todos los operativos registrados en días pasados
+  const [historialOperativos, setHistorialOperativos] = useState(() => {
+    const saved = localStorage.getItem('historialOperativos');
     return saved ? JSON.parse(saved) : [];
   });
 
@@ -20,14 +37,27 @@ export default function App() {
   });
 
   const [ingresoHoy, setIngresoHoy] = useState(() => {
-    const saved = localStorage.getItem('ingresoHoy');
-    return saved ? Number(saved) : '';
+    const savedFecha = localStorage.getItem('fechaIngreso');
+    const savedIngreso = localStorage.getItem('ingresoHoy');
+    if (savedFecha === fechaActual && savedIngreso) {
+      return Number(savedIngreso);
+    }
+    return '';
+  });
+
+  // Historial de ingresos y cierres diarios
+  const [historialIngresos, setHistorialIngresos] = useState(() => {
+    const saved = localStorage.getItem('historialIngresos');
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [nuevoGasto, setNuevoGasto] = useState({ nombre: '', montoTotal: '', fechaVencimiento: '' });
   const [nuevoAbono, setNuevoAbono] = useState({ gastoId: '', monto: '' });
   const [nuevoOp, setNuevoOp] = useState({ concepto: 'Gasolina', monto: '' });
-  const [mostrarHistorial, setMostrarHistorial] = useState(false);
+  
+  const [mostrarHistorialAbonos, setMostrarHistorialAbonos] = useState(false);
+  const [mostrarHistorialOps, setMostrarHistorialOps] = useState(false);
+  const [mostrarHistorialIngresos, setMostrarHistorialIngresos] = useState(false);
 
   useEffect(() => {
     localStorage.setItem('gastosFijos', JSON.stringify(gastosFijos));
@@ -35,7 +65,12 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('gastosOperativos', JSON.stringify(gastosOperativos));
-  }, [gastosOperativos]);
+    localStorage.setItem('fechaOperativos', fechaActual);
+  }, [gastosOperativos, fechaActual]);
+
+  useEffect(() => {
+    localStorage.setItem('historialOperativos', JSON.stringify(historialOperativos));
+  }, [historialOperativos]);
 
   useEffect(() => {
     localStorage.setItem('historialAbonos', JSON.stringify(historialAbonos));
@@ -43,7 +78,12 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('ingresoHoy', ingresoHoy.toString());
-  }, [ingresoHoy]);
+    localStorage.setItem('fechaIngreso', fechaActual);
+  }, [ingresoHoy, fechaActual]);
+
+  useEffect(() => {
+    localStorage.setItem('historialIngresos', JSON.stringify(historialIngresos));
+  }, [historialIngresos]);
 
   const calcularDiasRestantes = (fechaVenc) => {
     if (!fechaVenc) return 1;
@@ -69,12 +109,7 @@ export default function App() {
   }, 0);
 
   const totalGastosOpHoy = gastosOperativos.reduce((acc, g) => acc + Number(g.monto), 0);
-  
-  // Total abonado el día de hoy
-  const abonosHoy = historialAbonos.reduce((acc, a) => acc + Number(a.monto), 0);
-
-  // Disponible Real = Ingresos - Operativos - Abonos hechos hoy
-  const disponibleParaAbonar = Math.max(0, (Number(ingresoHoy) || 0) - totalGastosOpHoy - abonosHoy);
+  const disponibleParaAbonar = Math.max(0, (Number(ingresoHoy) || 0) - totalGastosOpHoy);
 
   const agregarGastoFijo = (e) => {
     e.preventDefault();
@@ -103,26 +138,47 @@ export default function App() {
     setGastosFijos(gastosFijos.map(g => g.id === id ? { ...g, abonado: g.abonado + monto } : g));
 
     const gastoRef = gastosFijos.find(g => g.id === id);
-    setHistorialAbonos([{
+    const nuevoRegistroAbono = {
       id: Date.now(),
       gastoNombre: gastoRef ? gastoRef.nombre : 'Gasto',
       monto,
       fecha: new Date().toLocaleString()
-    }, ...historialAbonos]);
+    };
 
+    setHistorialAbonos([nuevoRegistroAbono, ...historialAbonos]);
     setNuevoAbono({ gastoId: '', monto: '' });
   };
 
   const agregarGastoOp = (e) => {
     e.preventDefault();
     if (!nuevoOp.monto) return;
-    setGastosOperativos([{
+    const nuevoItem = {
       id: Date.now(),
       concepto: nuevoOp.concepto,
       monto: Number(nuevoOp.monto),
-      fecha: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }, ...gastosOperativos]);
+      fechaHora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      fecha: fechaActual
+    };
+
+    setGastosOperativos([nuevoItem, ...gastosOperativos]);
+    setHistorialOperativos([nuevoItem, ...historialOperativos]);
     setNuevoOp({ concepto: 'Gasolina', monto: '' });
+  };
+
+  // Función para guardar el corte de ingresos del día en el historial
+  const guardarCorteIngreso = () => {
+    if (!ingresoHoy) return;
+    const registroIngreso = {
+      id: Date.now(),
+      fecha: fechaActual,
+      ingresoBruto: Number(ingresoHoy),
+      operativos: totalGastosOpHoy,
+      disponible: disponibleParaAbonar
+    };
+    // Evitar duplicados del mismo día en el historial de ingresos, actualizando el último o agregando
+    const filtrados = historialIngresos.filter(item => item.fecha !== fechaActual);
+    setHistorialIngresos([registroIngreso, ...filtrados]);
+    alert('¡Corte de ingresos de hoy guardado en el historial con éxito!');
   };
 
   const eliminarGastoFijo = (id) => setGastosFijos(gastosFijos.filter(g => g.id !== id));
@@ -134,6 +190,8 @@ export default function App() {
   };
 
   const eliminarAbono = (id) => setHistorialAbonos(historialAbonos.filter(a => a.id !== id));
+  const eliminarHistorialOp = (id) => setHistorialOperativos(historialOperativos.filter(op => op.id !== id));
+  const eliminarHistorialIngreso = (id) => setHistorialIngresos(historialIngresos.filter(item => item.id !== id));
 
   const S = {
     app: { backgroundColor: '#111827', color: '#ffffff', minHeight: '100vh', padding: '16px', fontFamily: 'sans-serif', maxWidth: '420px', margin: '0 auto' },
@@ -153,7 +211,7 @@ export default function App() {
       <div style={S.header}>
         <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.8 }}>Meta Diaria Fija Requerida</span>
         <h1 style={{ fontSize: '34px', margin: '6px 0 0 0', fontWeight: 'bold' }}>${metaDiariaTotal.toFixed(2)}</h1>
-        <p style={{ fontSize: '11px', opacity: '0.9', marginTop: '4px' }}>Calculada según las fechas de vencimiento más próximas</p>
+        <p style={{ fontSize: '11px', opacity: '0.9', marginTop: '4px' }}>Fecha actual: {fechaActual}</p>
       </div>
 
       {/* Control de Flujo de Hoy: Ingresos vs Operativos */}
@@ -175,10 +233,14 @@ export default function App() {
           <strong style={{ color: '#fb923c' }}>-${totalGastosOpHoy.toFixed(2)}</strong>
         </div>
 
-        <div style={{ ...S.flexBetween, padding: '10px 8px', backgroundColor: '#065f46', borderRadius: '8px', marginTop: '8px', fontSize: '14px' }}>
+        <div style={{ ...S.flexBetween, padding: '10px 8px', backgroundColor: '#065f46', borderRadius: '8px', marginTop: '8px', fontSize: '14px', marginBottom: '10px' }}>
           <span style={{ fontWeight: 'bold', color: '#ecfdf5' }}>Disponible Real para Abonar:</span>
           <strong style={{ color: '#34d399', fontSize: '18px' }}>${disponibleParaAbonar.toFixed(2)}</strong>
         </div>
+
+        <button onClick={guardarCorteIngreso} style={{ width: '100%', backgroundColor: '#059669', color: '#fff', border: 'none', padding: '8px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '12px' }}>
+          💾 Guardar Corte en Historial de Ingresos
+        </button>
       </div>
 
       {/* Registrar Abono */}
@@ -210,7 +272,7 @@ export default function App() {
         </form>
       </div>
 
-      {/* Gastos Operativos */}
+      {/* Gastos Operativos de Hoy */}
       <div style={S.card}>
         <div style={S.flexBetween}>
           <h3 style={{ fontSize: '14px', margin: 0, color: '#fb923c' }}>⛽ Operativos de Hoy</h3>
@@ -244,7 +306,7 @@ export default function App() {
           ) : (
             gastosOperativos.map(op => (
               <div key={op.id} style={{ ...S.flexBetween, padding: '6px 8px', backgroundColor: '#374151', borderRadius: '4px', marginBottom: '4px', fontSize: '12px' }}>
-                <span>{op.concepto} <span style={{ color: '#9ca3af' }}>({op.fecha})</span></span>
+                <span>{op.concepto} <span style={{ color: '#9ca3af' }}>({op.fechaHora})</span></span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ color: '#fb923c', fontWeight: 'bold' }}>-${op.monto.toFixed(2)}</span>
                   <button onClick={() => eliminarGastoOp(op.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px' }}>🗑️</button>
@@ -331,18 +393,81 @@ export default function App() {
         </form>
       </div>
 
-      {/* Historial */}
+      {/* HISTORIAL 1: Ingresos y Cierres Diarios */}
       <div style={S.card}>
         <button 
-          onClick={() => setMostrarHistorial(!mostrarHistorial)}
-          style={{ width: '100%', background: 'none', border: 'none', color: '#d1d5db', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', ...S.flexBetween }}
+          onClick={() => setMostrarHistorialIngresos(!mostrarHistorialIngresos)}
+          style={{ width: '100%', background: 'none', border: 'none', color: '#6ee7b7', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', ...S.flexBetween }}
         >
-          <span>Historial de Abonos ({historialAbonos.length})</span>
-          <span>{mostrarHistorial ? '▲' : '▼'}</span>
+          <span>📊 Historial de Ingresos / Cierres ({historialIngresos.length})</span>
+          <span>{mostrarHistorialIngresos ? '▲' : '▼'}</span>
         </button>
 
-        {mostrarHistorial && (
-          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #374151' }}>
+        {mostrarHistorialIngresos && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #374151', maxHeight: '180px', overflowY: 'auto' }}>
+            {historialIngresos.length === 0 ? (
+              <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>No hay cortes de ingresos guardados.</p>
+            ) : (
+              historialIngresos.map(item => (
+                <div key={item.id} style={{ ...S.flexBetween, padding: '8px 0', borderBottom: '1px solid #374151', fontSize: '12px' }}>
+                  <div>
+                    <div><strong>Fecha: {item.fecha}</strong></div>
+                    <div style={{ color: '#9ca3af', fontSize: '11px' }}>Bruto: ${item.ingresoBruto} \vert{} Op: -${item.operativos}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#34d399', fontWeight: 'bold' }}>Disp: ${item.disponible}</span>
+                    <button onClick={() => eliminarHistorialIngreso(item.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>🗑️</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* HISTORIAL 2: Gastos Operativos Generales */}
+      <div style={S.card}>
+        <button 
+          onClick={() => setMostrarHistorialOps(!mostrarHistorialOps)}
+          style={{ width: '100%', background: 'none', border: 'none', color: '#fb923c', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', ...S.flexBetween }}
+        >
+          <span>⛽ Historial de Gastos Operativos ({historialOperativos.length})</span>
+          <span>{mostrarHistorialOps ? '▲' : '▼'}</span>
+        </button>
+
+        {mostrarHistorialOps && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #374151', maxHeight: '180px', overflowY: 'auto' }}>
+            {historialOperativos.length === 0 ? (
+              <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>No hay registros operativos anteriores.</p>
+            ) : (
+              historialOperativos.map(op => (
+                <div key={op.id} style={{ ...S.flexBetween, padding: '6px 0', borderBottom: '1px solid #374151', fontSize: '12px' }}>
+                  <div>
+                    <div><strong>{op.concepto}</strong> <span style={{ color: '#9ca3af', fontSize: '10px' }}>({op.fecha} {op.fechaHora})</span></div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#fb923c', fontWeight: 'bold' }}>-${op.monto}</span>
+                    <button onClick={() => eliminarHistorialOp(op.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>🗑️</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* HISTORIAL 3: Abonos a Fijos */}
+      <div style={S.card}>
+        <button 
+          onClick={() => setMostrarHistorialAbonos(!mostrarHistorialAbonos)}
+          style={{ width: '100%', background: 'none', border: 'none', color: '#4ade80', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', ...S.flexBetween }}
+        >
+          <span>💵 Historial de Abonos a Deudas ({historialAbonos.length})</span>
+          <span>{mostrarHistorialAbonos ? '▲' : '▼'}</span>
+        </button>
+
+        {mostrarHistorialAbonos && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #374151', maxHeight: '180px', overflowY: 'auto' }}>
             {historialAbonos.length === 0 ? (
               <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>No hay abonos registrados aún.</p>
             ) : (
@@ -352,8 +477,8 @@ export default function App() {
                     <div><strong>{abono.gastoNombre}</strong></div>
                     <div style={{ fontSize: '10px', color: '#9ca3af' }}>{abono.fecha}</div>
                   </div>
-                  <div>
-                    <span style={{ color: '#4ade80', fontWeight: 'bold', marginRight: '8px' }}>+${abono.monto}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#4ade80', fontWeight: 'bold' }}>+${abono.monto}</span>
                     <button onClick={() => eliminarAbono(abono.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>🗑️</button>
                   </div>
                 </div>
