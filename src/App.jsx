@@ -8,12 +8,25 @@ export default function App() {
 
   const fechaActual = obtenerFechaHoy();
 
+  // Función para sumar 1 mes a una fecha YYYY-MM-DD
+  const sumarUnMes = (fechaStr) => {
+    if (!fechaStr) return fechaActual;
+    const [year, month, day] = fechaStr.split('-').map(Number);
+    const nuevaFecha = new Date(year, month - 1 + 1, day);
+    return nuevaFecha.toISOString().split('T')[0];
+  };
+
   const [gastosFijos, setGastosFijos] = useState(() => {
     const saved = localStorage.getItem('gastosFijos');
     return saved ? JSON.parse(saved) : [
       { id: 1, nombre: 'Renta Auto / Cuota', montoTotal: 2500, abonado: 0, fechaVencimiento: '2026-10-18' },
       { id: 2, nombre: 'Seguro', montoTotal: 1200, abonado: 0, fechaVencimiento: '2026-10-31' }
     ];
+  });
+
+  const [gastosNoCumplidos, setGastosNoCumplidos] = useState(() => {
+    const saved = localStorage.getItem('gastosNoCumplidos');
+    return saved ? JSON.parse(saved) : [];
   });
 
   const [gastosOperativos, setGastosOperativos] = useState(() => {
@@ -25,7 +38,6 @@ export default function App() {
     return [];
   });
 
-  // Historial general de todos los operativos registrados en días pasados
   const [historialOperativos, setHistorialOperativos] = useState(() => {
     const saved = localStorage.getItem('historialOperativos');
     return saved ? JSON.parse(saved) : [];
@@ -45,7 +57,6 @@ export default function App() {
     return '';
   });
 
-  // Historial de ingresos y cierres diarios
   const [historialIngresos, setHistorialIngresos] = useState(() => {
     const saved = localStorage.getItem('historialIngresos');
     return saved ? JSON.parse(saved) : [];
@@ -58,10 +69,60 @@ export default function App() {
   const [mostrarHistorialAbonos, setMostrarHistorialAbonos] = useState(false);
   const [mostrarHistorialOps, setMostrarHistorialOps] = useState(false);
   const [mostrarHistorialIngresos, setMostrarHistorialIngresos] = useState(false);
+  const [mostrarNoCumplidos, setMostrarNoCumplidos] = useState(false);
+
+  // EFECTO: Procesar vencimientos y ciclos mensuales automáticos
+  useEffect(() => {
+    let huboCambios = false;
+    let nuevosFijos = [...gastosFijos];
+    let nuevosNoCumplidos = [...gastosNoCumplidos];
+
+    const hoy = new Date(fechaActual);
+
+    gastosFijos.forEach((gasto) => {
+      if (!gasto.fechaVencimiento) return;
+      const vencimiento = new Date(gasto.fechaVencimiento);
+
+      // Si hoy es el día de pago o ya pasó
+      if (hoy >= vencimiento) {
+        huboCambios = true;
+        const cumplido = gasto.abonado >= gasto.montoTotal;
+
+        if (!cumplido) {
+          // Guardar en la sección de No Cumplidos
+          nuevosNoCumplidos.unshift({
+            ...gasto,
+            idNoCumplido: Date.now() + Math.random(),
+            fechaFallida: gasto.fechaVencimiento,
+            faltante: gasto.montoTotal - gasto.abonado
+          });
+        }
+
+        // Remover el gasto vencido y agregar el renovado para el siguiente mes
+        nuevosFijos = nuevosFijos.filter(g => g.id !== gasto.id);
+        nuevosFijos.push({
+          id: Date.now() + Math.random(),
+          nombre: gasto.nombre,
+          montoTotal: gasto.montoTotal,
+          abonado: 0,
+          fechaVencimiento: sumarUnMes(gasto.fechaVencimiento)
+        });
+      }
+    });
+
+    if (huboCambios) {
+      setGastosFijos(nuevosFijos);
+      setGastosNoCumplidos(nuevosNoCumplidos);
+    }
+  }, [fechaActual]);
 
   useEffect(() => {
     localStorage.setItem('gastosFijos', JSON.stringify(gastosFijos));
   }, [gastosFijos]);
+
+  useEffect(() => {
+    localStorage.setItem('gastosNoCumplidos', JSON.stringify(gastosNoCumplidos));
+  }, [gastosNoCumplidos]);
 
   useEffect(() => {
     localStorage.setItem('gastosOperativos', JSON.stringify(gastosOperativos));
@@ -165,7 +226,6 @@ export default function App() {
     setNuevoOp({ concepto: 'Gasolina', monto: '' });
   };
 
-  // Función para guardar el corte de ingresos del día en el historial
   const guardarCorteIngreso = () => {
     if (!ingresoHoy) return;
     const registroIngreso = {
@@ -175,13 +235,13 @@ export default function App() {
       operativos: totalGastosOpHoy,
       disponible: disponibleParaAbonar
     };
-    // Evitar duplicados del mismo día en el historial de ingresos, actualizando el último o agregando
     const filtrados = historialIngresos.filter(item => item.fecha !== fechaActual);
     setHistorialIngresos([registroIngreso, ...filtrados]);
     alert('¡Corte de ingresos de hoy guardado en el historial con éxito!');
   };
 
   const eliminarGastoFijo = (id) => setGastosFijos(gastosFijos.filter(g => g.id !== id));
+  const eliminarNoCumplido = (id) => setGastosNoCumplidos(gastosNoCumplidos.filter(g => g.idNoCumplido !== id));
   
   const eliminarGastoOp = (id) => {
     const listaActualizada = gastosOperativos.filter(op => op.id !== id);
@@ -214,7 +274,7 @@ export default function App() {
         <p style={{ fontSize: '11px', opacity: '0.9', marginTop: '4px' }}>Fecha actual: {fechaActual}</p>
       </div>
 
-      {/* Control de Flujo de Hoy: Ingresos vs Operativos */}
+      {/* Control de Flujo de Hoy */}
       <div style={{ ...S.card, borderColor: '#10b981', backgroundColor: '#064e3b' }}>
         <h3 style={{ fontSize: '14px', marginTop: 0, marginBottom: '8px', color: '#6ee7b7' }}>💰 Flujo de Efectivo de Hoy</h3>
         <div style={{ marginBottom: '10px' }}>
@@ -272,7 +332,7 @@ export default function App() {
         </form>
       </div>
 
-      {/* Gastos Operativos de Hoy */}
+      {/* Gastos Operativos */}
       <div style={S.card}>
         <div style={S.flexBetween}>
           <h3 style={{ fontSize: '14px', margin: 0, color: '#fb923c' }}>⛽ Operativos de Hoy</h3>
@@ -363,6 +423,38 @@ export default function App() {
         })}
       </div>
 
+      {/* SECCIÓN NUEVA: Objetivos No Cumplidos */}
+      <div style={{ ...S.card, borderColor: gastosNoCumplidos.length > 0 ? '#ef4444' : '#374151' }}>
+        <button 
+          onClick={() => setMostrarNoCumplidos(!mostrarNoCumplidos)}
+          style={{ width: '100%', background: 'none', border: 'none', color: '#f87171', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', ...S.flexBetween }}
+        >
+          <span>❌ Objetivos No Cumplidos / Vencidos ({gastosNoCumplidos.length})</span>
+          <span>{mostrarNoCumplidos ? '▲' : '▼'}</span>
+        </button>
+
+        {mostrarNoCumplidos && (
+          <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #374151', maxHeight: '180px', overflowY: 'auto' }}>
+            {gastosNoCumplidos.length === 0 ? (
+              <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center' }}>¡Excelente! No tienes metas vencidas sin cumplir.</p>
+            ) : (
+              gastosNoCumplidos.map(item => (
+                <div key={item.idNoCumplido} style={{ ...S.flexBetween, padding: '8px 0', borderBottom: '1px solid #374151', fontSize: '12px' }}>
+                  <div>
+                    <div><strong>{item.nombre}</strong> <span style={{ fontSize: '10px', color: '#ef4444' }}>(Venció: {item.fechaFallida})</span></div>
+                    <div style={{ color: '#9ca3af', fontSize: '11px' }}>Meta: ${item.montoTotal} \vert{} Cubierto:${item.abonado}</div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#f87171', fontWeight: 'bold' }}>Faltó: ${item.faltante}</span>
+                    <button onClick={() => eliminarNoCumplido(item.idNoCumplido)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>🗑️</button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Nuevo Gasto Fijo */}
       <div style={S.card}>
         <h3 style={{ fontSize: '14px', marginTop: 0, marginBottom: '12px', color: '#60a5fa' }}>➕ Crear Nuevo Gasto Fijo</h3>
@@ -393,7 +485,7 @@ export default function App() {
         </form>
       </div>
 
-      {/* HISTORIAL 1: Ingresos y Cierres Diarios */}
+      {/* HISTORIAL: Ingresos y Cierres Diarios */}
       <div style={S.card}>
         <button 
           onClick={() => setMostrarHistorialIngresos(!mostrarHistorialIngresos)}
@@ -425,7 +517,7 @@ export default function App() {
         )}
       </div>
 
-      {/* HISTORIAL 2: Gastos Operativos Generales */}
+      {/* HISTORIAL: Gastos Operativos Generales */}
       <div style={S.card}>
         <button 
           onClick={() => setMostrarHistorialOps(!mostrarHistorialOps)}
@@ -456,7 +548,7 @@ export default function App() {
         )}
       </div>
 
-      {/* HISTORIAL 3: Abonos a Fijos */}
+      {/* HISTORIAL: Abonos a Fijos */}
       <div style={S.card}>
         <button 
           onClick={() => setMostrarHistorialAbonos(!mostrarHistorialAbonos)}
