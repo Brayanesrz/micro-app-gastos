@@ -15,6 +15,14 @@ export default function App() {
     return nuevaFecha.toISOString().split('T')[0];
   };
 
+  // Sumar días a una fecha YYYY-MM-DD
+  const sumarDias = (fechaStr, dias) => {
+    const [year, month, day] = fechaStr.split('-').map(Number);
+    const fecha = new Date(year, month - 1, day);
+    fecha.setDate(fecha.getDate() + dias);
+    return fecha.toISOString().split('T')[0];
+  };
+
   const [gastosFijos, setGastosFijos] = useState(() => {
     const saved = localStorage.getItem('gastosFijos');
     return saved ? JSON.parse(saved) : [
@@ -28,11 +36,27 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
+  // Gasolina pendiente con plazo de 3 días
+  const [gasolinasPendientes, setGasolinasPendientes] = useState(() => {
+    const saved = localStorage.getItem('gasolinasPendientes');
+    return saved ? JSON.parse(saved) : [];
+  });
+
   const [gastosOperativos, setGastosOperativos] = useState(() => {
     const savedFecha = localStorage.getItem('fechaOperativos');
     const savedOps = localStorage.getItem('gastosOperativos');
     if (savedFecha === fechaActual && savedOps) {
       return JSON.parse(savedOps);
+    }
+    return [];
+  });
+
+  // Antojos del día
+  const [antojosHoy, setAntojosHoy] = useState(() => {
+    const savedFecha = localStorage.getItem('fechaAntojos');
+    const savedAntojos = localStorage.getItem('antojosHoy');
+    if (savedFecha === fechaActual && savedAntojos) {
+      return JSON.parse(savedAntojos);
     }
     return [];
   });
@@ -64,6 +88,7 @@ export default function App() {
   const [nuevoGasto, setNuevoGasto] = useState({ nombre: '', montoTotal: '', fechaVencimiento: '' });
   const [nuevoAbono, setNuevoAbono] = useState({ gastoId: '', monto: '' });
   const [nuevoOp, setNuevoOp] = useState({ concepto: 'Gasolina', monto: '' });
+  const [nuevoAntojo, setNuevoAntojo] = useState({ descripcion: '', monto: '' });
   
   const [mostrarHistorialAbonos, setMostrarHistorialAbonos] = useState(false);
   const [mostrarHistorialOps, setMostrarHistorialOps] = useState(false);
@@ -74,7 +99,6 @@ export default function App() {
     let huboCambios = false;
     let nuevosFijos = [...gastosFijos];
     let nuevosNoCumplidos = [...gastosNoCumplidos];
-
     const hoy = new Date(fechaActual);
 
     gastosFijos.forEach((gasto) => {
@@ -120,9 +144,18 @@ export default function App() {
   }, [gastosNoCumplidos]);
 
   useEffect(() => {
+    localStorage.setItem('gasolinasPendientes', JSON.stringify(gasolinasPendientes));
+  }, [gasolinasPendientes]);
+
+  useEffect(() => {
     localStorage.setItem('gastosOperativos', JSON.stringify(gastosOperativos));
     localStorage.setItem('fechaOperativos', fechaActual);
   }, [gastosOperativos, fechaActual]);
+
+  useEffect(() => {
+    localStorage.setItem('antojosHoy', JSON.stringify(antojosHoy));
+    localStorage.setItem('fechaAntojos', fechaActual);
+  }, [antojosHoy, fechaActual]);
 
   useEffect(() => {
     localStorage.setItem('historialOperativos', JSON.stringify(historialOperativos));
@@ -158,11 +191,31 @@ export default function App() {
     return new Date(a.fechaVencimiento) - new Date(b.fechaVencimiento);
   });
 
-  const metaDiariaTotal = gastosFijos.reduce((acc, g) => {
+  // Gasolinas ordenadas por urgencia (vencimiento a 3 días)
+  const gasolinasOrdenadas = [...gasolinasPendientes].sort((a, b) => new Date(a.fechaVencimiento) - new Date(b.fechaVencimiento));
+
+  // Verificar si hay alguna gasolina en su último día (o vencida) sin cubrir
+  const hayGasolinaCritica = gasolinasPendientes.some(g => {
+    const restante = g.montoTotal - g.abonado;
+    const diasRem = calcularDiasRestantes(g.fechaVencimiento);
+    return restante > 0 && diasRem <= 1; // Si queda 1 día o ya venció
+  });
+
+  // Meta Diaria Total = Fijos + Gasolinas Pendientes + Antojos del día a cubrir
+  const metaGastosFijos = gastosFijos.reduce((acc, g) => {
     const pendiente = Math.max(0, g.montoTotal - g.abonado);
     const diasRem = calcularDiasRestantes(g.fechaVencimiento);
     return acc + (pendiente / diasRem);
   }, 0);
+
+  const metaGasolinas = gasolinasPendientes.reduce((acc, g) => {
+    const pendiente = Math.max(0, g.montoTotal - g.abonado);
+    const diasRem = calcularDiasRestantes(g.fechaVencimiento);
+    return acc + (pendiente / diasRem);
+  }, 0);
+
+  const totalAntojosHoy = antojosHoy.reduce((acc, a) => acc + Number(a.monto), 0);
+  const metaDiariaTotal = metaGastosFijos + metaGasolinas + totalAntojosHoy;
 
   const totalGastosOpHoy = gastosOperativos.reduce((acc, g) => acc + Number(g.monto), 0);
   const disponibleParaAbonar = Math.max(0, (Number(ingresoHoy) || 0) - totalGastosOpHoy);
@@ -180,11 +233,16 @@ export default function App() {
     setNuevoGasto({ nombre: '', montoTotal: '', fechaVencimiento: '' });
   };
 
-  const registrarAbono = (e) => {
+  const registrarAbonoGastoFijo = (e) => {
     e.preventDefault();
     if (!nuevoAbono.gastoId || !nuevoAbono.monto) return;
     const monto = Number(nuevoAbono.monto);
     const id = Number(nuevoAbono.gastoId);
+
+    if (hayGasolinaCritica) {
+      alert('⚠️ Tienes una carga de gasolina en su día límite o vencida. ¡Primero debes cubrir la gasolina antes de abonar a otros gastos fijos!');
+      return;
+    }
 
     if (monto > disponibleParaAbonar) {
       alert(`No puedes abonar $${monto}. Tu disponible real de hoy es solo $${disponibleParaAbonar.toFixed(2)}`);
@@ -194,31 +252,87 @@ export default function App() {
     setGastosFijos(gastosFijos.map(g => g.id === id ? { ...g, abonado: g.abonado + monto } : g));
 
     const gastoRef = gastosFijos.find(g => g.id === id);
-    const nuevoRegistroAbono = {
+    setHistorialAbonos([{
       id: Date.now(),
-      gastoNombre: gastoRef ? gastoRef.nombre : 'Gasto',
+      gastoNombre: gastoRef ? gastoRef.nombre : 'Gasto Fijo',
       monto,
       fecha: new Date().toLocaleString()
-    };
+    }, ...historialAbonos]);
 
-    setHistorialAbonos([nuevoRegistroAbono, ...historialAbonos]);
     setNuevoAbono({ gastoId: '', monto: '' });
+  };
+
+  // Abonar a Gasolina Pendiente
+  const abonarGasolina = (id, montoAbono) => {
+    const monto = Number(montoAbono);
+    if (!monto || monto <= 0) return;
+
+    if (monto > disponibleParaAbonar) {
+      alert(`No puedes abonar $${monto}. Tu disponible real es $${disponibleParaAbonar.toFixed(2)}`);
+      return;
+    }
+
+    setGasolinasPendientes(gasolinasPendientes.map(g => {
+      if (g.id === id) {
+        const nuevoAbonado = g.abonado + monto;
+        return { ...g, abonado: nuevoAbonado };
+      }
+      return g;
+    }));
+
+    // Si ya se cubrió totalmente, la eliminamos de pendientes
+    const gastoGas = gasolinasPendientes.find(g => g.id === id);
+    setHistorialAbonos([{
+      id: Date.now(),
+      gastoNombre: `⛽ Gasolina (${gastoGas?.fechaVencimiento || 'Carga'})`,
+      monto,
+      fecha: new Date().toLocaleString()
+    }, ...historialAbonos]);
   };
 
   const agregarGastoOp = (e) => {
     e.preventDefault();
     if (!nuevoOp.monto) return;
+    const montoNum = Number(nuevoOp.monto);
     const nuevoItem = {
       id: Date.now(),
       concepto: nuevoOp.concepto,
-      monto: Number(nuevoOp.monto),
+      monto: montoNum,
       fechaHora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       fecha: fechaActual
     };
 
     setGastosOperativos([nuevoItem, ...gastosOperativos]);
     setHistorialOperativos([nuevoItem, ...historialOperativos]);
+
+    // SI ES GASOLINA, automáticamente crea un apartado con plazo de 3 días
+    if (nuevoOp.concepto === 'Gasolina') {
+      const fechaVencGas = sumarDias(fechaActual, 3);
+      const nuevaGasPendiente = {
+        id: Date.now() + Math.random(),
+        nombre: `Tanque Gasolina (${fechaActual})`,
+        montoTotal: montoNum,
+        abonado: 0,
+        fechaVencimiento: fechaVencGas
+      };
+      setGasolinasPendientes([...gasolinasPendientes, nuevaGasPendiente]);
+    }
+
     setNuevoOp({ concepto: 'Gasolina', monto: '' });
+  };
+
+  // Agregar Antojos
+  const agregarAntojo = (e) => {
+    e.preventDefault();
+    if (!nuevoAntojo.monto) return;
+    const item = {
+      id: Date.now(),
+      descripcion: nuevoAntojo.descripcion || 'Antojo / Gusto',
+      monto: Number(nuevoAntojo.monto),
+      hora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    setAntojosHoy([item, ...antojosHoy]);
+    setNuevoAntojo({ descripcion: '', monto: '' });
   };
 
   const guardarCorteIngreso = () => {
@@ -228,16 +342,18 @@ export default function App() {
       fecha: fechaActual,
       ingresoBruto: Number(ingresoHoy),
       operativos: totalGastosOpHoy,
+      antojos: totalAntojosHoy,
       disponible: disponibleParaAbonar
     };
     const filtrados = historialIngresos.filter(item => item.fecha !== fechaActual);
     setHistorialIngresos([registroIngreso, ...filtrados]);
-    setIngresoHoy(''); // Reset del campo tras guardar el corte
+    setIngresoHoy('');
     alert('¡Corte de ingresos de hoy guardado en el historial con éxito!');
   };
 
   const eliminarGastoFijo = (id) => setGastosFijos(gastosFijos.filter(g => g.id !== id));
   const eliminarNoCumplido = (id) => setGastosNoCumplidos(gastosNoCumplidos.filter(g => g.idNoCumplido !== id));
+  const eliminarGasolinaPendiente = (id) => setGasolinasPendientes(gasolinasPendientes.filter(g => g.id !== id));
   
   const eliminarGastoOp = (id) => {
     const listaActualizada = gastosOperativos.filter(op => op.id !== id);
@@ -245,6 +361,7 @@ export default function App() {
     localStorage.setItem('gastosOperativos', JSON.stringify(listaActualizada));
   };
 
+  const eliminarAntojo = (id) => setAntojosHoy(antojosHoy.filter(a => a.id !== id));
   const eliminarAbono = (id) => setHistorialAbonos(historialAbonos.filter(a => a.id !== id));
   const eliminarHistorialOp = (id) => setHistorialOperativos(historialOperativos.filter(op => op.id !== id));
   const eliminarHistorialIngreso = (id) => setHistorialIngresos(historialIngresos.filter(item => item.id !== id));
@@ -267,7 +384,7 @@ export default function App() {
       <div style={S.header}>
         <span style={{ fontSize: '11px', textTransform: 'uppercase', letterSpacing: '1px', opacity: 0.8 }}>Meta Diaria Fija Requerida</span>
         <h1 style={{ fontSize: '34px', margin: '6px 0 0 0', fontWeight: 'bold' }}>${metaDiariaTotal.toFixed(2)}</h1>
-        <p style={{ fontSize: '11px', opacity: '0.9', marginTop: '4px' }}>Fecha actual: {fechaActual}</p>
+        <p style={{ fontSize: '11px', opacity: '0.9', marginTop: '4px' }}>Incluye deudas, gasolina a 3 días y antojos del día</p>
       </div>
 
       {/* Control de Flujo de Hoy */}
@@ -284,9 +401,14 @@ export default function App() {
           />
         </div>
 
-        <div style={{ ...S.flexBetween, padding: '8px', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: '8px', fontSize: '12px' }}>
-          <span>(-) Gastos Operativos hoy:</span>
+        <div style={{ ...S.flexBetween, padding: '6px 8px', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: '8px', fontSize: '12px', marginBottom: '4px' }}>
+          <span>(-) Operativos hoy:</span>
           <strong style={{ color: '#fb923c' }}>-${totalGastosOpHoy.toFixed(2)}</strong>
+        </div>
+
+        <div style={{ ...S.flexBetween, padding: '6px 8px', backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: '8px', fontSize: '12px', marginBottom: '8px' }}>
+          <span>(-) Antojos hoy:</span>
+          <strong style={{ color: '#f43f5e' }}>-${totalAntojosHoy.toFixed(2)}</strong>
         </div>
 
         <div style={{ ...S.flexBetween, padding: '10px 8px', backgroundColor: '#065f46', borderRadius: '8px', marginTop: '8px', fontSize: '14px', marginBottom: '10px' }}>
@@ -299,16 +421,73 @@ export default function App() {
         </button>
       </div>
 
-      {/* Registrar Abono */}
+      {/* GASOLINAS PENDIENTES (Plazo 3 Días) */}
+      {gasolinasPendientes.length > 0 && (
+        <div style={{ ...S.card, borderColor: hayGasolinaCritica ? '#ef4444' : '#f59e0b', backgroundColor: hayGasolinaCritica ? '#2c1517' : '#292524' }}>
+          <h3 style={{ fontSize: '14px', marginTop: 0, marginBottom: '8px', color: '#fbbf24' }}>⛽ Tanques de Gasolina Pendientes (Plazo 3 Días)</h3>
+          {hayGasolinaCritica && (
+            <p style={{ fontSize: '11px', color: '#f87171', fontWeight: 'bold', marginBottom: '8px' }}>
+              ⚠️ ¡Gasolina en día límite! Abonos a otros gastos fijos bloqueados hasta cubrirla.
+            </p>
+          )}
+          {gasolinasOrdenadas.map(gas => {
+            const pendienteGas = Math.max(0, gas.montoTotal - gas.abonado);
+            const diasRemGas = calcularDiasRestantes(gas.fechaVencimiento);
+            const cuotaGas = (pendienteGas / diasRemGas).toFixed(2);
+            const porcentajeGas = Math.min(100, Math.round((gas.abonado / gas.montoTotal) * 100));
+
+            return (
+              <div key={gas.id} style={{ backgroundColor: '#1c1917', padding: '10px', borderRadius: '8px', marginBottom: '8px', border: '1px solid #44403c' }}>
+                <div style={S.flexBetween}>
+                  <div>
+                    <strong style={{ fontSize: '13px' }}>{gas.nombre}</strong>
+                    <div style={{ fontSize: '11px', color: '#a8a29e' }}>Límite: {gas.fechaVencimiento} ({diasRemGas} días rem.) | Meta/día: ${cuotaGas}</div>
+                  </div>
+                  <button onClick={() => eliminarGasolinaPendiente(gas.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}>🗑️</button>
+                </div>
+                <div style={{ ...S.flexBetween, fontSize: '11px', marginTop: '6px', marginBottom: '2px' }}>
+                  <span>Abonado: ${gas.abonado} /${gas.montoTotal}</span>
+                  <span style={{ color: '#34d399' }}>Falta: ${pendienteGas}</span>
+                </div>
+                <div style={{ width: '100%', backgroundColor: '#44403c', height: '6px', borderRadius: '3px', overflow: 'hidden', marginBottom: '8px' }}>
+                  <div style={{ width: `${porcentajeGas}%`, height: '100%', backgroundColor: '#f59e0b' }} />
+                </div>
+                {pendienteGas > 0 && (
+                  <div style={S.flexRow}>
+                    <input 
+                      type="number" 
+                      placeholder={`Abonar (Máx $${Math.min(disponibleParaAbonar, pendienteGas).toFixed(0)})`} 
+                      id={`input-gas-${gas.id}`}
+                      style={{ ...S.input, fontSize: '12px', padding: '6px' }}
+                    />
+                    <button 
+                      onClick={() => {
+                        const val = document.getElementById(`input-gas-${gas.id}`).value;
+                        abonarGasolina(gas.id, val);
+                        document.getElementById(`input-gas-${gas.id}`).value = '';
+                      }} 
+                      style={{ ...S.btnGreen, padding: '6px 12px', fontSize: '12px' }}
+                    >
+                      Abonar Gas
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Registrar Abono a Gasto Fijo */}
       <div style={S.card}>
         <h3 style={{ fontSize: '14px', marginTop: 0, marginBottom: '12px', color: '#4ade80' }}>💵 Registrar Abono a Gasto Fijo</h3>
-        <form onSubmit={registrarAbono} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <form onSubmit={registrarAbonoGastoFijo} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <select 
             value={nuevoAbono.gastoId} 
             onChange={e => setNuevoAbono({...nuevoAbono, gastoId: e.target.value})}
             style={S.input}
           >
-            <option value="">Selecciona Gasto (Ordenado por Vencimiento)...</option>
+            <option value="">Selecciona Gasto Fijo...</option>
             {gastosFijosOrdenados.map(g => (
               <option key={g.id} value={g.id}>
                 {g.nombre} - Falta: ${(g.montoTotal - g.abonado).toFixed(0)} (Vence: {g.fechaVencimiento || 'S/F'})
@@ -366,6 +545,48 @@ export default function App() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ color: '#fb923c', fontWeight: 'bold' }}>-${op.monto.toFixed(2)}</span>
                   <button onClick={() => eliminarGastoOp(op.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px' }}>🗑️</button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* NUEVO APARTADO: Antojos del Día */}
+      <div style={{ ...S.card, borderColor: '#f43f5e' }}>
+        <div style={S.flexBetween}>
+          <h3 style={{ fontSize: '14px', margin: 0, color: '#fb7185' }}>🍫 Antojos / Gustos de Hoy</h3>
+          <span style={{ fontSize: '12px', fontWeight: 'bold', background: 'rgba(244, 63, 94, 0.2)', padding: '4px 8px', borderRadius: '4px', color: '#fb7185' }}>
+            Total: ${totalAntojosHoy.toFixed(2)}
+          </span>
+        </div>
+        <form onSubmit={agregarAntojo} style={{ ...S.flexRow, marginTop: '12px', marginBottom: '12px' }}>
+          <input 
+            type="text" 
+            placeholder="Descripción (ej. Café, snack)" 
+            value={nuevoAntojo.descripcion}
+            onChange={e => setNuevoAntojo({...nuevoAntojo, descripcion: e.target.value})}
+            style={{ ...S.input, width: '45%' }}
+          />
+          <input 
+            type="number" 
+            placeholder="Monto $" 
+            value={nuevoAntojo.monto}
+            onChange={e => setNuevoAntojo({...nuevoAntojo, monto: e.target.value})}
+            style={{ ...S.input, width: '25%' }}
+          />
+          <button type="submit" style={{ backgroundColor: '#e11d48', color: '#fff', border: 'none', padding: '8px', borderRadius: '8px', fontWeight: 'bold', width: '30%', cursor: 'pointer', fontSize: '12px' }}>+ Antojo</button>
+        </form>
+        <div style={{ maxHeight: '100px', overflowY: 'auto' }}>
+          {antojosHoy.length === 0 ? (
+            <p style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center', margin: '4px 0' }}>Sin antojos registrados hoy.</p>
+          ) : (
+            antojosHoy.map(a => (
+              <div key={a.id} style={{ ...S.flexBetween, padding: '4px 8px', backgroundColor: '#374151', borderRadius: '4px', marginBottom: '4px', fontSize: '12px' }}>
+                <span>{a.descripcion} <span style={{ color: '#9ca3af' }}>({a.hora})</span></span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ color: '#fb7185', fontWeight: 'bold' }}>-${a.monto.toFixed(2)}</span>
+                  <button onClick={() => eliminarAntojo(a.id)} style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '12px' }}>🗑️</button>
                 </div>
               </div>
             ))
@@ -481,7 +702,7 @@ export default function App() {
         </form>
       </div>
 
-      {/* HISTORIAL: Ingresos y Cierres Diarios */}
+      {/* HISTORIAL: Ingresos y Cierres */}
       <div style={S.card}>
         <button 
           onClick={() => setMostrarHistorialIngresos(!mostrarHistorialIngresos)}
@@ -500,7 +721,7 @@ export default function App() {
                 <div key={item.id} style={{ ...S.flexBetween, padding: '8px 0', borderBottom: '1px solid #374151', fontSize: '12px' }}>
                   <div>
                     <div><strong>Fecha: {item.fecha}</strong></div>
-                    <div style={{ color: '#9ca3af', fontSize: '11px' }}>Bruto: ${item.ingresoBruto} \vert{} Op: -${item.operativos}</div>
+                    <div style={{ color: '#9ca3af', fontSize: '11px' }}>Bruto: ${item.ingresoBruto} | Op: -${item.operativos} \vert{} Antojos: -${item.antojos || 0}</div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{ color: '#34d399', fontWeight: 'bold' }}>Disp: ${item.disponible}</span>
@@ -513,7 +734,7 @@ export default function App() {
         )}
       </div>
 
-      {/* HISTORIAL: Gastos Operativos Generales */}
+      {/* HISTORIAL: Operativos */}
       <div style={S.card}>
         <button 
           onClick={() => setMostrarHistorialOps(!mostrarHistorialOps)}
@@ -544,13 +765,13 @@ export default function App() {
         )}
       </div>
 
-      {/* HISTORIAL: Abonos a Fijos */}
+      {/* HISTORIAL: Abonos */}
       <div style={S.card}>
         <button 
           onClick={() => setMostrarHistorialAbonos(!mostrarHistorialAbonos)}
           style={{ width: '100%', background: 'none', border: 'none', color: '#4ade80', textAlign: 'left', fontWeight: 'bold', cursor: 'pointer', ...S.flexBetween }}
         >
-          <span>💵 Historial de Abonos a Deudas ({historialAbonos.length})</span>
+          <span>💵 Historial de Abonos ({historialAbonos.length})</span>
           <span>{mostrarHistorialAbonos ? '▲' : '▼'}</span>
         </button>
 
