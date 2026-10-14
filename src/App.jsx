@@ -15,7 +15,6 @@ export default function App() {
     return nuevaFecha.toISOString().split('T')[0];
   };
 
-  // Sumar días a una fecha YYYY-MM-DD
   const sumarDias = (fechaStr, dias) => {
     const [year, month, day] = fechaStr.split('-').map(Number);
     const fecha = new Date(year, month - 1, day);
@@ -36,7 +35,6 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  // Gasolina pendiente con plazo de 3 días
   const [gasolinasPendientes, setGasolinasPendientes] = useState(() => {
     const saved = localStorage.getItem('gasolinasPendientes');
     return saved ? JSON.parse(saved) : [];
@@ -51,7 +49,6 @@ export default function App() {
     return [];
   });
 
-  // Antojos del día
   const [antojosHoy, setAntojosHoy] = useState(() => {
     const savedFecha = localStorage.getItem('fechaAntojos');
     const savedAntojos = localStorage.getItem('antojosHoy');
@@ -191,17 +188,14 @@ export default function App() {
     return new Date(a.fechaVencimiento) - new Date(b.fechaVencimiento);
   });
 
-  // Gasolinas ordenadas por urgencia (vencimiento a 3 días)
   const gasolinasOrdenadas = [...gasolinasPendientes].sort((a, b) => new Date(a.fechaVencimiento) - new Date(b.fechaVencimiento));
 
-  // Verificar si hay alguna gasolina en su último día (o vencida) sin cubrir
   const hayGasolinaCritica = gasolinasPendientes.some(g => {
     const restante = g.montoTotal - g.abonado;
     const diasRem = calcularDiasRestantes(g.fechaVencimiento);
-    return restante > 0 && diasRem <= 1; // Si queda 1 día o ya venció
+    return restante > 0 && diasRem <= 1;
   });
 
-  // Meta Diaria Total = Fijos + Gasolinas Pendientes + Antojos del día a cubrir
   const metaGastosFijos = gastosFijos.reduce((acc, g) => {
     const pendiente = Math.max(0, g.montoTotal - g.abonado);
     const diasRem = calcularDiasRestantes(g.fechaVencimiento);
@@ -262,7 +256,6 @@ export default function App() {
     setNuevoAbono({ gastoId: '', monto: '' });
   };
 
-  // Abonar a Gasolina Pendiente
   const abonarGasolina = (id, montoAbono) => {
     const monto = Number(montoAbono);
     if (!monto || monto <= 0) return;
@@ -274,13 +267,11 @@ export default function App() {
 
     setGasolinasPendientes(gasolinasPendientes.map(g => {
       if (g.id === id) {
-        const nuevoAbonado = g.abonado + monto;
-        return { ...g, abonado: nuevoAbonado };
+        return { ...g, abonado: g.abonado + monto };
       }
       return g;
     }));
 
-    // Si ya se cubrió totalmente, la eliminamos de pendientes
     const gastoGas = gasolinasPendientes.find(g => g.id === id);
     setHistorialAbonos([{
       id: Date.now(),
@@ -294,8 +285,10 @@ export default function App() {
     e.preventDefault();
     if (!nuevoOp.monto) return;
     const montoNum = Number(nuevoOp.monto);
+    const idComun = Date.now();
+
     const nuevoItem = {
-      id: Date.now(),
+      id: idComun,
       concepto: nuevoOp.concepto,
       monto: montoNum,
       fechaHora: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -305,11 +298,17 @@ export default function App() {
     setGastosOperativos([nuevoItem, ...gastosOperativos]);
     setHistorialOperativos([nuevoItem, ...historialOperativos]);
 
-    // SI ES GASOLINA, automáticamente crea un apartado con plazo de 3 días
     if (nuevoOp.concepto === 'Gasolina') {
-      const fechaVencGas = sumarDias(fechaActual, 3);
+      // Verificar si ya se realizó el corte de ingresos el día de hoy
+      const yaPasoCorteHoy = historialIngresos.some(item => item.fecha === fechaActual);
+
+      // Si ya pasó el corte, se le dan 3 días completos a partir de hoy (vence en hoy + 3).
+      // Si NO ha pasado el corte, hoy es el Día 1 de 3 (vence en hoy + 2).
+      const diasASumar = yaPasoCorteHoy ? 3 : 2;
+      const fechaVencGas = sumarDias(fechaActual, diasASumar);
+
       const nuevaGasPendiente = {
-        id: Date.now() + Math.random(),
+        id: idComun,
         nombre: `Tanque Gasolina (${fechaActual})`,
         montoTotal: montoNum,
         abonado: 0,
@@ -321,7 +320,6 @@ export default function App() {
     setNuevoOp({ concepto: 'Gasolina', monto: '' });
   };
 
-  // Agregar Antojos
   const agregarAntojo = (e) => {
     e.preventDefault();
     if (!nuevoAntojo.monto) return;
@@ -353,11 +351,16 @@ export default function App() {
 
   const eliminarGastoFijo = (id) => setGastosFijos(gastosFijos.filter(g => g.id !== id));
   const eliminarNoCumplido = (id) => setGastosNoCumplidos(gastosNoCumplidos.filter(g => g.idNoCumplido !== id));
-  const eliminarGasolinaPendiente = (id) => setGasolinasPendientes(gasolinasPendientes.filter(g => g.id !== id));
   
+  const eliminarGasolinaPendiente = (id) => {
+    setGasolinasPendientes(gasolinasPendientes.filter(g => g.id !== id));
+    setGastosOperativos(gastosOperativos.filter(op => op.id !== id));
+  };
+
   const eliminarGastoOp = (id) => {
     const listaActualizada = gastosOperativos.filter(op => op.id !== id);
     setGastosOperativos(listaActualizada);
+    setGasolinasPendientes(gasolinasPendientes.filter(g => g.id !== id));
     localStorage.setItem('gastosOperativos', JSON.stringify(listaActualizada));
   };
 
@@ -421,7 +424,7 @@ export default function App() {
         </button>
       </div>
 
-      {/* GASOLINAS PENDIENTES (Plazo 3 Días) */}
+      {/* GASOLINAS PENDIENTES */}
       {gasolinasPendientes.length > 0 && (
         <div style={{ ...S.card, borderColor: hayGasolinaCritica ? '#ef4444' : '#f59e0b', backgroundColor: hayGasolinaCritica ? '#2c1517' : '#292524' }}>
           <h3 style={{ fontSize: '14px', marginTop: 0, marginBottom: '8px', color: '#fbbf24' }}>⛽ Tanques de Gasolina Pendientes (Plazo 3 Días)</h3>
@@ -552,7 +555,7 @@ export default function App() {
         </div>
       </div>
 
-      {/* NUEVO APARTADO: Antojos del Día */}
+      {/* Antojos del Día */}
       <div style={{ ...S.card, borderColor: '#f43f5e' }}>
         <div style={S.flexBetween}>
           <h3 style={{ fontSize: '14px', margin: 0, color: '#fb7185' }}>🍫 Antojos / Gustos de Hoy</h3>
@@ -625,7 +628,6 @@ export default function App() {
                 <span>Meta: ${gasto.montoTotal}</span>
               </div>
 
-              {/* Barra de Progreso */}
               <div style={{ width: '100%', backgroundColor: '#374151', height: '10px', borderRadius: '5px', overflow: 'hidden' }}>
                 <div style={{ 
                   width: `${porcentaje}%`, 
